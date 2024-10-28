@@ -1,4 +1,3 @@
-import pygame
 import random
 import time
 import math
@@ -6,7 +5,108 @@ from constants import *
 from entities.character import Character
 from utils.pathfinding import PathFinder
 from entities.npc_data import NPCData
+from typing import List, Tuple, Dict, Set
+import pygame
+import heapq
 
+
+class NavigationMesh:
+    def __init__(self, walls: List[pygame.Rect], furniture: List['Furniture'], cell_size: int = 40):
+        self.cell_size = cell_size
+        self.walkable_cells: Set[Tuple[int, int]] = set()
+        self.path_cache: Dict[Tuple[Tuple[int, int], Tuple[int, int]], List[Tuple[int, int]]] = {}
+        self.create_navigation_mesh(walls, furniture)
+
+    def create_navigation_mesh(self, walls: List[pygame.Rect], furniture: List['Furniture']) -> None:
+        """Create a grid of walkable cells"""
+        # Convert coordinates to grid cells
+        min_x, max_x = 100, 1160  # From wall coordinates
+        min_y, max_y = 50, 550
+
+        # Create initial grid
+        for x in range(min_x, max_x, self.cell_size):
+            for y in range(min_y, max_y, self.cell_size):
+                cell = pygame.Rect(x, y, self.cell_size, self.cell_size)
+                is_walkable = True
+
+                # Check collision with walls and furniture
+                for wall in walls:
+                    if cell.colliderect(wall):
+                        is_walkable = False
+                        break
+
+                if is_walkable:
+                    for item in furniture:
+                        if cell.colliderect(item.rect):
+                            is_walkable = False
+                            break
+
+                if is_walkable:
+                    self.walkable_cells.add((x // self.cell_size, y // self.cell_size))
+
+    def get_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """Get path between two points, using cache if available"""
+        # Convert to grid coordinates
+        start_cell = (start[0] // self.cell_size, start[1] // self.cell_size)
+        end_cell = (end[0] // self.cell_size, end[1] // self.cell_size)
+
+        # Check cache
+        cache_key = (start_cell, end_cell)
+        if cache_key in self.path_cache:
+            return self.path_cache[cache_key]
+
+        # A* pathfinding
+        path = self._find_path(start_cell, end_cell)
+
+        # Cache the result
+        self.path_cache[cache_key] = path
+        return path
+
+    def _find_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """A* pathfinding with optimizations"""
+        if start == end:
+            return [start]
+
+        frontier = [(0, start)]
+        came_from = {start: None}
+        cost_so_far = {start: 0}
+
+        while frontier:
+            _, current = heapq.heappop(frontier)
+
+            if current == end:
+                break
+
+            # Only check orthogonal movements (no diagonals)
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                next_cell = (current[0] + dx, current[1] + dy)
+
+                if next_cell not in self.walkable_cells:
+                    continue
+
+                new_cost = cost_so_far[current] + 1
+
+                if next_cell not in cost_so_far or new_cost < cost_so_far[next_cell]:
+                    cost_so_far[next_cell] = new_cost
+                    priority = new_cost + self._heuristic(next_cell, end)
+                    heapq.heappush(frontier, (priority, next_cell))
+                    came_from[next_cell] = current
+
+        # Reconstruct path
+        current = end
+        path = []
+        while current is not None:
+            # Convert back to world coordinates
+            world_coords = (current[0] * self.cell_size + self.cell_size // 2,
+                            current[1] * self.cell_size + self.cell_size // 2)
+            path.append(world_coords)
+            current = came_from.get(current)
+
+        return list(reversed(path))
+
+    def _heuristic(self, a: Tuple[int, int], b: Tuple[int, int]) -> float:
+        """Manhattan distance heuristic"""
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
 class NPC(Character):
@@ -44,6 +144,13 @@ class NPC(Character):
         self.stuck_start_time = None
         self.initial_x = x
         self.initial_y = y
+
+    def set_navigation_mesh(self, nav_mesh):
+        self.nav_mesh = nav_mesh
+
+    def update_path(self, target_pos):
+        start_pos = (self.rect.centerx, self.rect.centery)
+        self.current_path = self.nav_mesh.get_path(start_pos, target_pos)
 
     def get_role_color(self, role):
         """Return different colors for different NPC roles"""

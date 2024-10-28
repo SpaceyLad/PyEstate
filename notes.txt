@@ -1,4 +1,5 @@
 TODO:
+- Make the objects have physics when they hit eachother.
 - Give more resources to reduce lag when generating new path.
 - Add more parameters. (Needs, social, Short and long term memory).
 - Add parameters inside the window.

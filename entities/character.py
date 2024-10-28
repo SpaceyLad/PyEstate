@@ -1,7 +1,8 @@
 import pygame
 import time
 from constants import *
-from entities.furniture import Furniture  # Add this import
+from entities.furniture import Furniture
+
 
 class Character:
     def __init__(self, x, y, color):
