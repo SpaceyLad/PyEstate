@@ -6,7 +6,7 @@ from entities.character import Character
 from entities.npc import NPC, NavigationMesh
 from ui.chat_log import ChatLog
 from entities.npc_data import NPCData
-from utils.layout_config import create_walls, create_furniture
+from entities.layout_config import create_walls, create_furniture
 
 walls = create_walls()
 furniture = create_furniture()
