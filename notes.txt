@@ -1,0 +1,21 @@
+TODO:
+- Give more resources to reduce lag when generating new path.
+- Add more parameters. (Needs, social, Short and long term memory).
+- Add parameters inside the window.
+- Add GPT or Claude through API.
+- Add reasoning and basic actions to fix basic needs.
+- Add reasoning when it comes to the social.
+- Add memory that is updated as the game plays.
+- Add equipment. (Clothing and main hand)
+- Add an end game state.
+- Add a "godmode" where the player can whisper to the bots.
+- Optimize path finding by saving it as a buffer for later.
+
+
+DONE:
+- Have a path finding algorithm.
+- Learn how to make NPC objects.
+- Learn how to make furniture objects.
+- Make unstuck functions for the bots.
+- Added sliding function to avoid getting stuck.
+- Make a respawn function. After 2 attempts at getting unstuck, bot will respawn.
