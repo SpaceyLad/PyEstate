@@ -8,6 +8,9 @@ from entities.npc_data import NPCData
 from typing import List, Tuple, Dict, Set
 import pygame
 import heapq
+import constants
+
+
 
 
 class NavigationMesh:
@@ -133,14 +136,14 @@ class NPC(Character):
         self.furniture = None
         self.last_movement_time = time.time()
         self.stuck_timeout = 1.0
-        self.respawn_timeout = 5.0
+        self.respawn_timeout = 10.0
         self.is_unsticking = False
         self.unstick_path = None
         self.last_position = (x, y)
         self.original_target = None
         self.last_unstick_attempt = time.time()
         self.unstick_attempts = 0
-        self.max_unstick_attempts = 2
+        self.max_unstick_attempts = 3
         self.stuck_start_time = None
         self.initial_x = x
         self.initial_y = y
@@ -150,6 +153,14 @@ class NPC(Character):
         self.hunger = 50
         self.stamina = 50
         self.dead = False
+
+        # Stamina-related constants
+        self.STAMINA_DRAIN_RATE = 3.0  # How much stamina is lost per second while moving
+        self.STAMINA_REGEN_RATE = 2.0  # How much stamina is gained per second while resting
+        self.STAMINA_MOVE_THRESHOLD = 10  # Minimum stamina required to move
+        self.is_moving = False  # Track if NPC is currently moving
+        self.resting = False  # Track if NPC is actively resting
+        self.rest_message_shown = False  # Track if we've shown the resting message
 
     def set_navigation_mesh(self, nav_mesh):
         self.nav_mesh = nav_mesh
@@ -174,6 +185,10 @@ class NPC(Character):
         self.message_time = time.time()
 
     def respawn(self):
+        # Don't respawn if dead
+        if self.dead:
+            return
+
         print("NPC respawning...")
         self.rect.x = self.initial_x
         self.rect.y = self.initial_y
@@ -249,7 +264,35 @@ class NPC(Character):
         return False
 
     def update(self, walls, furniture):
+        if self.dead:
+            self.current_message = "💀"
+            self.color = (128, 128, 128)
+            return
+
         current_time = time.time()
+
+        # Stamina Management
+        if self.stamina <= self.STAMINA_MOVE_THRESHOLD and not self.resting:
+            self.resting = True
+            self.rest_message_shown = False
+            self.current_path = None  # Stop current movement
+            self.current_path_index = 0  # Reset path index
+
+        # If resting, regenerate stamina
+        if self.resting:
+            self.stamina = min(100, self.stamina + (self.STAMINA_REGEN_RATE / constants.clock_tick))
+            if not self.rest_message_shown:
+                self.say(f"I need to rest...")
+                self.rest_message_shown = True
+
+            # Stop resting when stamina is above 50%
+            if self.stamina >= 50:
+                self.resting = False
+                self.say("I feel refreshed!")
+            return  # Skip movement updates while resting
+
+        # Reset is_moving flag at the start of each update
+        self.is_moving = False
 
         # Chat updates
         if current_time - self.last_chat_time > NPC_CHAT_INTERVAL:
@@ -262,76 +305,25 @@ class NPC(Character):
                 self.waiting_time = 0
                 self.current_patrol_index = (self.current_patrol_index + 1) % len(self.furniture)
                 self.current_path = None
+                self.current_path_index = 0  # Reset path index
             return
 
         # Get current path
         current_path = self.unstick_path if self.is_unsticking else self.current_path
 
-        # Only do stuck detection if we have a path and are trying to move
-        if current_path and self.current_path_index < len(current_path):
-            current_pos = (self.rect.x, self.rect.y)
-            distance_moved = math.sqrt(
-                (current_pos[0] - self.last_position[0]) ** 2 +
-                (current_pos[1] - self.last_position[1]) ** 2
-            )
-
-            if distance_moved < 1:  # If we haven't moved significantly
-                # Start tracking stuck time if we haven't already
-                if self.stuck_start_time is None:
-                    self.stuck_start_time = current_time
-
-                # Check if we've been stuck long enough to respawn
-                if current_time - self.stuck_start_time > self.respawn_timeout:
-                    self.respawn()
-                    return
-                # Normal unstick behavior if we haven't reached respawn timeout
-                elif current_time - self.last_movement_time > self.stuck_timeout:
-                    if self.is_unsticking and current_time - self.last_unstick_attempt > self.stuck_timeout:
-                        if self.unstick_attempts < self.max_unstick_attempts:
-                            self.try_unstick()
-                        else:
-                            print("Too many unstick attempts, finding new patrol target...")
-                            self.is_unsticking = False
-                            self.unstick_path = None
-                            self.original_target = None
-                            self.unstick_attempts = 0
-                            self.current_patrol_index = (self.current_patrol_index + 1) % len(self.furniture)
-                            self.find_new_path()
-                    elif not self.is_unsticking:
-                        self.try_unstick()
-            else:
-                # Reset stuck tracking if we've moved
-                self.stuck_start_time = None
-                self.last_movement_time = current_time
-                if self.is_unsticking and current_time - self.last_unstick_attempt > 0.5:
-                    self.try_return_to_original()
-
-            self.last_position = current_pos
-
-        # Use unstick path if we're unsticking, otherwise use normal path
-        current_path = self.unstick_path if self.is_unsticking else self.current_path
-
-        # If no path or reached end of path, find new path
-        if not current_path or self.current_path_index >= len(current_path):
-            if self.is_unsticking:
-                # If we've finished the unstick path, try to return to original target
-                if self.try_return_to_original():
-                    current_path = self.current_path
-                else:
-                    # If we can't return to original target, try unsticking again
-                    if not self.try_unstick():
-                        return
-                    current_path = self.unstick_path
-            else:
-                if not self.find_new_path():
-                    return
-                current_path = self.current_path
-
-        # Ensure we have a valid path
+        # Safety check for current_path and current_path_index
         if not current_path:
+            self.find_new_path()
             return
 
-        # Move towards target
+        # Ensure current_path_index is valid
+        if self.current_path_index >= len(current_path):
+            self.current_path_index = 0
+            self.current_path = None
+            self.find_new_path()
+            return
+
+        # Now we can safely access the current target
         target = current_path[self.current_path_index]
         dx = target[0] - self.rect.centerx
         dy = target[1] - self.rect.centery
@@ -341,14 +333,61 @@ class NPC(Character):
             self.current_path_index += 1
             if self.current_path_index >= len(current_path):
                 if self.is_unsticking:
-                    # Try to return to original target
                     self.try_return_to_original()
                 else:
                     self.waiting_time = current_time
+                    self.current_path = None
+                    self.current_path_index = 0
         else:
-            dx = dx / distance
-            dy = dy / distance
-            self.move(dx, dy, walls, furniture)
+            # Only move if we have enough stamina
+            if self.stamina > self.STAMINA_MOVE_THRESHOLD:
+                dx = dx / distance
+                dy = dy / distance
+                self.move(dx, dy, walls, furniture)
+                self.is_moving = True
+                # Drain stamina while moving
+                self.stamina = max(0, self.stamina - (self.STAMINA_DRAIN_RATE / constants.clock_tick))
+            else:
+                self.resting = True  # Force rest if stamina gets too low during movement
+
+        # Stuck detection and handling
+        current_pos = (self.rect.x, self.rect.y)
+        distance_moved = math.sqrt(
+            (current_pos[0] - self.last_position[0]) ** 2 +
+            (current_pos[1] - self.last_position[1]) ** 2
+        )
+
+        if distance_moved < 1:  # If we haven't moved significantly
+            if self.stuck_start_time is None:
+                self.stuck_start_time = current_time
+
+            if current_time - self.stuck_start_time > self.respawn_timeout:
+                self.respawn()
+                return
+            elif current_time - self.last_movement_time > self.stuck_timeout:
+                if self.is_unsticking and current_time - self.last_unstick_attempt > self.stuck_timeout:
+                    if self.unstick_attempts < self.max_unstick_attempts:
+                        self.try_unstick()
+                    else:
+                        self.is_unsticking = False
+                        self.unstick_path = None
+                        self.original_target = None
+                        self.unstick_attempts = 0
+                        self.current_patrol_index = (self.current_patrol_index + 1) % len(self.furniture)
+                        self.find_new_path()
+                elif not self.is_unsticking:
+                    self.try_unstick()
+        else:
+            self.stuck_start_time = None
+            self.last_movement_time = current_time
+            if self.is_unsticking and current_time - self.last_unstick_attempt > 0.5:
+                self.try_return_to_original()
+
+        self.last_position = current_pos
+
+        # If not moving and not resting, regenerate stamina slowly
+        if not self.is_moving and not self.resting:
+            self.stamina = min(100, self.stamina + (self.STAMINA_REGEN_RATE * 0.5 / constants.clock_tick))
 
 
 
@@ -356,6 +395,16 @@ class NPC(Character):
         super().draw(surface)
         # Draw pathfinding debug lines
         current_path = self.unstick_path if self.is_unsticking else self.current_path
+
+        # If the NPC is dead, draw a death marker
+        if self.dead:
+            font = pygame.font.SysFont('Arial', FONT_SIZE)
+            death_marker = font.render('💀', True, BLACK)
+            marker_rect = death_marker.get_rect(center=self.rect.center)
+            surface.blit(death_marker, marker_rect)
+        # Only draw messages if the NPC is alive
+        elif self.current_message and time.time() - self.message_time < CHAT_DURATION:
+            self.draw_message(surface)
 
         if current_path and len(current_path) > self.current_path_index:
             start_pos = (self.rect.centerx, self.rect.centery)
@@ -371,6 +420,7 @@ class NPC(Character):
             # Draw original target if we're unsticking
             if self.original_target and self.is_unsticking:
                 pygame.draw.circle(surface, GREEN, (int(self.original_target[0]), int(self.original_target[1])), 5)
+
 
 
     def set_patrol_points(self, furniture, walls):

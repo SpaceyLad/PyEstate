@@ -9,16 +9,18 @@ from entities.npc import NPC, NavigationMesh
 from ui.chat_log import ChatLog
 from entities.npc_data import NPCData
 from entities.layout_config import create_walls, create_furniture
+from gui.status_display import NPCStatusDisplay
 
 walls = create_walls()
 furniture = create_furniture()
 nav_mesh = NavigationMesh(walls, furniture)
-stats_gui = NPCStatsGUI(WINDOW_WIDTH)
+
 
 
 def main():
     pygame.init()
     pygame.font.init()
+    status_display = NPCStatusDisplay()
 
     # Set up display
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -77,20 +79,14 @@ def main():
             dy = keys[pygame.K_DOWN] - keys[pygame.K_UP]
             player.move(dx, dy, walls, furniture)
 
-        # Update NPC
-        for npc in npcs:
-            npc.update(walls, furniture)
-            # Add NPC messages to chat log when they speak
-            if npc.current_message and time.time() - npc.message_time < 0.1:
-                print(npc.current_message)
-                chat_log.add_message(f"{npc.current_message}")
+
 
         # Print positions every second (debug)
         current_time = time.time()
         if current_time - last_position_print >= 5.0:
-            print(f"Player position: ({player.rect.x}, {player.rect.y})")
-            for npc in npcs:
-                print(f"{npc.role} position: ({npc.rect.x}, {npc.rect.y})")
+           # print(f"Player position: ({player.rect.x}, {player.rect.y})")
+            #for npc in npcs:
+                #print(f"{npc.role} position: ({npc.rect.x}, {npc.rect.y})")
             last_position_print = current_time
 
         # Drawing
@@ -106,13 +102,34 @@ def main():
 
         # Draw characters
         player.draw(screen)
-        for npc in npcs:
-            npc.draw(screen)
-            npc.hunger = npc.hunger - 1 / clock_tick
-            print(f"{NPC} + {npc.hunger}")
 
         # Draw chat log
         chat_log.draw(screen)
+
+        # Update NPC
+        for npc in npcs:
+            npc.update(walls, furniture)
+            # Add NPC messages to chat log when they speak
+            if npc.current_message and time.time() - npc.message_time < 0.1:
+                print(npc.current_message)
+                chat_log.add_message(f"{npc.current_message}")
+            if not npc.dead:
+                # Hunger decreases constantly
+                npc.hunger = max(0, npc.hunger - 1 / constants.clock_tick)
+
+                # If hunger reaches 0, start decreasing health
+                if npc.hunger <= 0:
+                    npc.health = max(0, npc.health - 2 / clock.get_fps())
+
+                # If health reaches 0, NPC dies
+                if npc.health <= 0:
+                    npc.dead = True
+                    npc.say("I have fallen...")
+
+            npc.draw(screen)
+
+        # Draw status display (Add this line)
+        status_display.draw(screen, npcs)
 
         # Draw input box if active
         if input_active:
@@ -122,7 +139,6 @@ def main():
             text_surface = font.render(input_text, True, BLACK)
             screen.blit(text_surface, (input_box.x + 5, input_box.y + 5))
 
-        stats_gui.draw(screen, npcs)
         pygame.display.flip()
         clock.tick(constants.clock_tick)
 
