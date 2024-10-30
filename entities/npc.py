@@ -145,6 +145,12 @@ class NPC(Character):
         self.initial_x = x
         self.initial_y = y
 
+        # In game states
+        self.health = 50
+        self.hunger = 50
+        self.stamina = 50
+        self.dead = False
+
     def set_navigation_mesh(self, nav_mesh):
         self.nav_mesh = nav_mesh
 

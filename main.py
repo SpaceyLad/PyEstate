@@ -1,6 +1,8 @@
 import pygame
 import sys
 import time
+
+import constants
 from constants import *
 from entities.character import Character
 from entities.npc import NPC, NavigationMesh
@@ -11,6 +13,7 @@ from entities.layout_config import create_walls, create_furniture
 walls = create_walls()
 furniture = create_furniture()
 nav_mesh = NavigationMesh(walls, furniture)
+stats_gui = NPCStatsGUI(WINDOW_WIDTH)
 
 
 def main():
@@ -105,6 +108,8 @@ def main():
         player.draw(screen)
         for npc in npcs:
             npc.draw(screen)
+            npc.hunger = npc.hunger - 1 / clock_tick
+            print(f"{NPC} + {npc.hunger}")
 
         # Draw chat log
         chat_log.draw(screen)
@@ -117,8 +122,9 @@ def main():
             text_surface = font.render(input_text, True, BLACK)
             screen.blit(text_surface, (input_box.x + 5, input_box.y + 5))
 
+        stats_gui.draw(screen, npcs)
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(constants.clock_tick)
 
     pygame.quit()
     sys.exit()

@@ -23,3 +23,6 @@ GREEN = (0, 255, 0)
 GRAY = (128, 128, 128)
 BEIGE = (245, 245, 220)
 LIGHT_BLUE = (173, 216, 230)
+
+# Other
+clock_tick = 60

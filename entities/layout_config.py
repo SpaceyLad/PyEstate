@@ -38,7 +38,7 @@ def create_walls():
         pygame.Rect(650, 450, sww, 100),
 
         # Bathroom walls
-        pygame.Rect(500, 300, sww, 260),
+        #pygame.Rect(500, 300, sww, 260),
     ]
 
 
